@@ -1,3 +1,5 @@
+// Espressif ESP32 version 1.06, board Wemos Lolin32 lite
+
 //SBUS
 #include "sbus.h"  //https://github.com/bolderflight/sbus/tree/main
 
@@ -8,11 +10,15 @@ bfs::SbusRx sbus_rx1(&Serial1, 34, 0, true);  //ESP32  (true = inverted 3.3V fro
 bfs::SbusData data2;
 bfs::SbusRx sbus_rx2(&Serial2, 35, 0, true);  //ESP32  (true = inverted 3.3V from FSIA6B SBUS pin)
 
+long lastSbus1;
+long lastSbus2;
+
 
 //PWM for servos
 #include <ESP32Servo.h>                                                                                                      //https://github.com/madhephaestus/ESP32Servo
 uint16_t pwmPin[16] = { 14, 27, 26, 25, 33, 32, 19, 13, 16, 17, 18, 5, 23, 4, 2, 15 };                                       //contains pins for PWM output for each servo
 uint16_t failsafe[16] = { 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500 };  //failsafe servos values for each 16 channels in µs
+
 Servo servos[16];
 uint16_t channels[16];
 
@@ -37,14 +43,15 @@ long lastTouch;
 #include <Preferences.h>
 Preferences preferences;
 
-//#define DEBUG //uncomment to get debug messages
+//#define DEBUG  //uncomment to get debug messages
+//#define DEBUG_FRAME
 
 
 void setup() {
   //stop Wifi and Bluetooth
   WiFi.mode(WIFI_OFF);
   btStop();
-  
+
   Serial.begin(115200);
   delay(1000);
   Serial.println("program started");
@@ -53,15 +60,22 @@ void setup() {
   preferences.begin("sbusBox", false);
   size_t size = preferences.getBytesLength("failsafe");  //check if failsafe is already saved
   if (size == sizeof(failsafe)) {
-    preferences.getBytes("failsafe", failsafe, sizeof(failsafe));       //get values
-  } else preferences.putBytes("failsafe", failsafe, sizeof(failsafe));  // if not already done, save failsafe array
+    preferences.getBytes("failsafe", failsafe, sizeof(failsafe));  //get values
+  } else {
+    preferences.putBytes("failsafe", failsafe, sizeof(failsafe));  // if not already done, save failsafe array
+  }
   //preferences.clear();              // Remove all preferences under the opened namespace
   //preferences.remove("counter");   // remove the counter key only
 
 
   Serial.println("read preferences :");
-  Serial.print("\tstart at ");
-  //Serial.println(startThr);
+  Serial.print("16 failsafe values :  ");
+  for (int i = 0; i < 16; i++) {
+    Serial.print("\t");
+    Serial.print(failsafe[i]);
+  }
+  Serial.println("");
+
 
 
   //preferences.end();  // Close the Preferences
@@ -80,6 +94,8 @@ void setup() {
   esp_task_wdt_init(WDT_TIMEOUT, true);  //enable panic so ESP32 restarts
   esp_task_wdt_add(NULL);                //add current thread to WDT watch
 
+  Serial.println("prog ready, watchdog set, servos started");
+
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
 }
@@ -89,7 +105,9 @@ void loop() {
 
   if (sbus_rx1.Read()) {  // if something on SBUS1
     data1 = sbus_rx1.data();
-#ifdef DEBUG
+    lastSbus1 = millis();
+#ifdef DEBUG_FRAME
+    Serial.print("Sbus1 \t");
     for (int8_t i = 0; i < data1.NUM_CH; i++) {
       Serial.print(data1.ch[i]);
       Serial.print("\t");
@@ -102,7 +120,9 @@ void loop() {
 
   if (sbus_rx2.Read()) {  //if something on  SBUS2
     data2 = sbus_rx2.data();
-#ifdef DEBUG
+    lastSbus2 = millis();
+#ifdef DEBUG_FRAME
+    Serial.print("Sbus2 \t");
     for (int8_t i = 0; i < data2.NUM_CH; i++) {
       Serial.print(data2.ch[i]);
       Serial.print("\t");
@@ -115,26 +135,37 @@ void loop() {
   }
 
   //map SBUS to servos PWM
-  if (!data1.lost_frame && !data1.failsafe) {  // if SBUS1 is "clean" use it !
+  //if (!data1.lost_frame && !data1.failsafe) {  // if SBUS1 is "clean" use it !
+  if ((millis()-lastSbus1) < 40) { // if SBUS1 is "clean" use it !
+#ifdef DEBUG
+    Serial.println("use Sbus\t 1");
+#endif
     for (int i = 0; i < 16; i++) {
       int pulseWidth = map(data1.ch[i], 172, 1811, 1000, 2000);
-      servos[i].write(pulseWidth);  //write directly pulsewodth to the library
+      servos[i].write(pulseWidth);  //write directly pulsewidth to the library
       channels[i] = pulseWidth;
     }
-    digitalWrite(LED_PIN, LOW);                       // RX1 OK : LED on
-  } else if (!data2.lost_frame && !data2.failsafe) {  // else if SBUS2 is clean use it
+    digitalWrite(LED_PIN, (millis() / 100) % 2 == 0 ? LOW : HIGH);  // RX1 OK : blink LED
+  } else if ((millis()-lastSbus2) < 40) {                           // else if SBUS2 is clean use it                                //if (!data2.lost_frame && !data2.failsafe) {               
+#ifdef DEBUG
+    Serial.println("use Sbus\t 2");
+#endif
     for (int i = 0; i < 16; i++) {
       int pulseWidth = map(data2.ch[i], 172, 1811, 1000, 2000);
-      servos[i].write(pulseWidth);  //write directly pulsewodth to the library
+      servos[i].write(pulseWidth);  //write directly pulsewidth to the library
       channels[i] = pulseWidth;
     }
-    digitalWrite(LED_PIN, (millis() / 100) % 2 == 0 ? LOW : HIGH);  // RX2 ok : blink LED
-  } else                                                            //apply failsafe
+digitalWrite(LED_PIN, (millis() / 500) % 2 == 0 ? LOW : HIGH);  
+    //digitalWrite(LED_PIN, LOW);  // RX2 ok : LED on
+  } else                         //apply failsafe
+#ifdef DEBUG
+    Serial.println("use failsafe \t 3");
+#endif
   {
     for (int i = 0; i < 16; i++) {
       servos[i].write(failsafe[i]);
     }
-    digitalWrite(LED_PIN, HIGH);  // LED off in failsafe
+    digitalWrite(LED_PIN, LOW);  // LED on in failsafe
   }
 
   //check if should save failsafe
