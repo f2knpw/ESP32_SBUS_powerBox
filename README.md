@@ -2,4 +2,4 @@
 
 Full description of this project is on my hackaday's page : https://hackaday.io/project/205573-dual-sbus-receivers-power-box-for-rc-planes
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/an_-sBasi_k" frameborder="0" allowfullscreen></iframe>
+[![Regarder la vidéo](https://img.youtube.com/vi/an_-sBasi_k/0.jpg)](https://www.youtube.com/watch?v=an_-sBasi_k)
