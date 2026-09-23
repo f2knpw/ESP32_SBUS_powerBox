@@ -1,19 +1,19 @@
 // Espressif ESP32 version 1.06, board Wemos Lolin32 lite
 
 // SBUS
-#include "sbus.h" // https://github.com/bolderflight/sbus/tree/main
+#include "sbus.h"  // https://github.com/bolderflight/sbus/tree/main
 
 bfs::SbusData data1;
-bfs::SbusRx sbus_rx1(&Serial1, 34, 0, true); // ESP32 (true = inverted 3.3V)
+bfs::SbusRx sbus_rx1(&Serial1, 34, 0, true);  // ESP32 (true = inverted 3.3V)
 
 bfs::SbusData data2;
-bfs::SbusRx sbus_rx2(&Serial2, 35, 0, true); // ESP32 (true = inverted 3.3V)
+bfs::SbusRx sbus_rx2(&Serial2, 35, 0, true);  // ESP32 (true = inverted 3.3V)
 
 uint32_t lastSbus1 = 0;
 uint32_t lastSbus2 = 0;
 
 // PWM for servos
-#include <ESP32Servo.h> // https://github.com/madhephaestus/ESP32Servo
+#include <ESP32Servo.h>  // https://github.com/madhephaestus/ESP32Servo
 
 uint16_t pwmPin[16] = { 14, 27, 26, 25, 33, 32, 19, 13, 16, 17, 5, 18, 23, 4, 2, 15 };
 uint16_t failsafe[16] = { 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500 };
@@ -25,11 +25,10 @@ uint16_t channels[16];
 
 // Watchdog
 #include <esp_task_wdt.h>
-#define WDT_TIMEOUT 1 // 1 second WDT
+#define WDT_TIMEOUT 1  // 1 second WDT
 
-// Bouton poussoir Failsafe (GPIO 12 relié au GND lors de l'appui)
-#define FAIL_PIN 12
-uint32_t buttonPressStartTime = 0;
+#define FAIL_PIN 12  // push button Failsafe (GPIO 12 to GND when pushed)
+bool  saveFailsafe = false;
 
 // WiFi / Bluetooth
 #include <WiFi.h>
@@ -40,7 +39,7 @@ uint32_t buttonPressStartTime = 0;
 Preferences preferences;
 
 void setup() {
-  // Desactivation WiFi et Bluetooth
+  // Desactivation WiFi and Bluetooth
   WiFi.mode(WIFI_OFF);
   btStop();
 
@@ -48,8 +47,8 @@ void setup() {
   delay(1000);
   Serial.println("Program started");
 
-  // Configuration de la broche du bouton avec PULLUP interne
   pinMode(FAIL_PIN, INPUT_PULLUP);
+  
 
   // Preferences
   preferences.begin("sbusBox", false);
@@ -85,6 +84,13 @@ void setup() {
   digitalWrite(LED_PIN, HIGH);
 
   Serial.println("Prog ready, watchdog set, servos started");
+
+  //failsafe button presses ?
+  if (digitalRead(FAIL_PIN) == LOW) 
+  {
+    saveFailsafe = true;
+    Serial.println("will record failsafe values when button released");
+  }
 }
 
 void loop() {
@@ -133,33 +139,22 @@ void loop() {
   }
 
   // Sauvegarde Failsafe via bouton poussoir
-  if (digitalRead(FAIL_PIN) == LOW) { // Appui detecte (etat LOW)
-    if (buttonPressStartTime == 0) {
-      buttonPressStartTime = millis(); // Debut du maintien du bouton
-    } else if (millis() - buttonPressStartTime >= 2000) { // Maintenu pendant 2 secondes
-      Serial.println("Bouton valide (2s) : enregistrement du failsafe");
-      
-      for (int i = 0; i < 16; i++) {
-        failsafe[i] = channels[i];
-      }
-      preferences.putBytes("failsafe", failsafe, sizeof(failsafe));
+  if ((digitalRead(FAIL_PIN) == HIGH) && (saveFailsafe)) {  // button was released
 
-      // Clignotement rapide de la LED pour confirmer l'enregistrement
-      for (int k = 0; k < 6; k++) {
-        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-        delay(100);
-      }
+    Serial.println("failsafe values saved into preferences");
 
-      // Attente du relachement du bouton pour eviter la reecriture en boucle
-      while (digitalRead(FAIL_PIN) == LOW) {
-        esp_task_wdt_reset();
-        delay(10);
-      }
-      buttonPressStartTime = 0;
+    for (int i = 0; i < 16; i++) {
+      failsafe[i] = channels[i];
     }
-  } else {
-    buttonPressStartTime = 0; // Reinitialisation du chrono si relache avant 2s
-  }
+    preferences.putBytes("failsafe", failsafe, sizeof(failsafe));
 
+    // Clignotement rapide de la LED pour confirmer l'enregistrement
+    for (int k = 0; k < 6; k++) {
+      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+      delay(100);
+    }
+    saveFailsafe = false;
+  }
   delay(1);
 }
+
