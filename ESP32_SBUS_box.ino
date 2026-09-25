@@ -116,7 +116,7 @@ void loop() {
   if (newFrame1 || newFrame2) {
     if (sbus1_ok) {
       for (int i = 0; i < 16; i++) {
-        int pulseWidth = map(data1.ch[i], 172, 1811, 1000, 2000);
+        int pulseWidth = map(data1.ch[i], 88, 1896, 875, 2125); //extended 125% range both on SBUS ans PWM
         servos[i].write(pulseWidth);
         channels[i] = pulseWidth;
       }
@@ -124,17 +124,22 @@ void loop() {
 
     } else if (sbus2_ok) {
       for (int i = 0; i < 16; i++) {
-        int pulseWidth = map(data2.ch[i], 172, 1811, 1000, 2000);
+       int pulseWidth = map(data2.ch[i], 88, 1896, 875, 2125);  //extended 125% range both on SBUS ans PWM
         servos[i].write(pulseWidth);
         channels[i] = pulseWidth;
       }
       digitalWrite(LED_PIN, (millis() / 500) % 2 == 0 ? LOW : HIGH);
 
-    } else {
+    } 
+  }
+  else //apply box failsafe
+  {
+    if (((millis() -lastSbus2)  > 100)&&((millis() -lastSbus1) >100))
+    {
       for (int i = 0; i < 16; i++) {
         servos[i].write(failsafe[i]);
       }
-      digitalWrite(LED_PIN, LOW);
+      digitalWrite(LED_PIN, (millis() / 1000) % 2 == 0 ? LOW : HIGH);
     }
   }
 
